@@ -11,6 +11,7 @@ export const Login = () => {
   const { addToast } = useToastStore();
   const { user } = useAuthStore();
   const [isLoginView, setIsLoginView] = useState(true);
+  const [isRecoverView, setIsRecoverView] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,6 +62,22 @@ export const Login = () => {
     setError(null);
     setSuccess(null);
     
+    if (isRecoverView) {
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(
+        email,
+        { redirectTo: 'https://misfinanzas-two.vercel.app/reset-password' }
+      );
+      if (authError) {
+        setError(authError.message);
+        addToast(authError.message, 'error');
+      } else {
+        setSuccess('✓ Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña.');
+        addToast('Enlace enviado', 'success');
+      }
+      setLoading(false);
+      return;
+    }
+
     if (isLoginView) {
       if (timeLeft > 0) {
         setLoading(false);
@@ -116,10 +133,12 @@ export const Login = () => {
           </div>
         </div>
         <h2 className="mt-6 text-center text-2xl font-bold leading-9 tracking-tight text-slate-900">
-          MisFinanzas
+          {isRecoverView ? 'Recuperar contraseña' : 'MisFinanzas'}
         </h2>
         <p className="mt-2 text-center text-sm text-slate-500">
-          Controla tus finanzas personales fácilmente
+          {isRecoverView 
+            ? 'Te enviaremos un enlace para restablecer tu contraseña' 
+            : 'Controla tus finanzas personales fácilmente'}
         </p>
       </div>
 
@@ -135,15 +154,34 @@ export const Login = () => {
             placeholder="tu@correo.com"
           />
 
-          <Input
-            label="Contraseña"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            icon={<Lock size={18} />}
-            placeholder="••••••••"
-          />
+          {!isRecoverView && (
+            <div>
+              <Input
+                label="Contraseña"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                icon={<Lock size={18} />}
+                placeholder="••••••••"
+              />
+              {isLoginView && (
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRecoverView(true);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="text-sm font-medium text-primary hover:underline focus:outline-none"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && (
             <div className="p-3 text-sm text-expense bg-expense/10 rounded-lg">
@@ -159,19 +197,39 @@ export const Login = () => {
 
           <div className="flex flex-col gap-3 pt-2">
             <Button type="submit" fullWidth isLoading={loading} disabled={timeLeft > 0}>
-              {timeLeft > 0 ? `Intenta de nuevo en ${timeLeft}s...` : (isLoginView ? 'Iniciar sesión' : 'Crear cuenta')}
+              {timeLeft > 0 ? `Intenta de nuevo en ${timeLeft}s...` : isRecoverView ? 'Enviar enlace' : isLoginView ? 'Iniciar sesión' : 'Crear cuenta'}
             </Button>
             
-            <p className="text-center text-sm text-slate-500 mt-2">
-              {isLoginView ? "¿No tienes cuenta? " : "¿Ya tienes cuenta? "}
-              <button 
-                type="button" 
-                onClick={() => setIsLoginView(!isLoginView)}
-                className="font-semibold text-primary hover:underline focus:outline-none"
-              >
-                {isLoginView ? 'Regístrate aquí' : 'Inicia sesión'}
-              </button>
-            </p>
+            {isRecoverView ? (
+              <p className="text-center text-sm text-slate-500 mt-2">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setIsRecoverView(false);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  className="font-semibold text-primary hover:underline focus:outline-none"
+                >
+                  ← Volver al inicio de sesión
+                </button>
+              </p>
+            ) : (
+              <p className="text-center text-sm text-slate-500 mt-2">
+                {isLoginView ? "¿No tienes cuenta? " : "¿Ya tienes cuenta? "}
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setIsLoginView(!isLoginView);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  className="font-semibold text-primary hover:underline focus:outline-none"
+                >
+                  {isLoginView ? 'Regístrate aquí' : 'Inicia sesión'}
+                </button>
+              </p>
+            )}
           </div>
         </form>
       </div>

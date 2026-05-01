@@ -11,6 +11,7 @@ import { Budget } from '@/pages/Budget';
 import { Savings } from '@/pages/Savings';
 import { Reports } from '@/pages/Reports';
 import { Profile } from '@/pages/Profile';
+import { ResetPassword } from '@/pages/ResetPassword';
 import { ToastContainer } from '@/components/ui/Toast';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { Button } from '@/components/ui/Button';
@@ -40,6 +41,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         <Route element={<AuthGuard />}>
           <Route path="/" element={<Dashboard />} />
