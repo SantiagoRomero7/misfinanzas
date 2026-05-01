@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Mail, Lock, Wallet } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useToastStore } from '@/store/useToastStore';
 
 export const Login = () => {
+  const { addToast } = useToastStore();
   const { user } = useAuthStore();
   const [isLoginView, setIsLoginView] = useState(true);
   const [email, setEmail] = useState('');
@@ -14,6 +16,43 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  const [attempts, setAttempts] = useState(0);
+  const [lockoutTime, setLockoutTime] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  useEffect(() => {
+    const savedAttempts = localStorage.getItem('login_attempts');
+    const savedLockout = localStorage.getItem('login_lockout');
+    
+    if (savedAttempts) setAttempts(parseInt(savedAttempts));
+    if (savedLockout) {
+      const remaining = Math.ceil((parseInt(savedLockout) - Date.now()) / 1000);
+      if (remaining > 0) {
+        setLockoutTime(parseInt(savedLockout));
+        setTimeLeft(remaining);
+      } else {
+        localStorage.removeItem('login_lockout');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (timeLeft > 0) {
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            setLockoutTime(null);
+            localStorage.removeItem('login_lockout');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [timeLeft]);
 
   if (user) {
     return <Navigate to="/" replace />;
@@ -26,22 +65,47 @@ export const Login = () => {
     setSuccess(null);
     
     if (isLoginView) {
+      if (timeLeft > 0) {
+        setLoading(false);
+        return;
+      }
+
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      if (authError) setError(authError.message);
+      if (authError) {
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        localStorage.setItem('login_attempts', newAttempts.toString());
+
+        if (newAttempts >= 5) {
+          const lockout = Date.now() + 30000;
+          setLockoutTime(lockout);
+          setTimeLeft(30);
+          localStorage.setItem('login_lockout', lockout.toString());
+          addToast('Demasiados intentos. Bloqueado por 30s.', 'error');
+        } else {
+          setError(authError.message);
+          addToast(authError.message, 'error');
+        }
+      } else {
+        // Success
+        setAttempts(0);
+        localStorage.removeItem('login_attempts');
+        localStorage.removeItem('login_lockout');
+      }
     } else {
+      // Sign up... (keeping existing logic but could add rate limit here too if needed)
       const { error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
       if (authError) {
         setError(authError.message);
+        addToast(authError.message, 'error');
       } else {
-        setSuccess('¡Cuenta creada! Haz iniciado sesión.');
-        // Si el correo requiere verificación, supabase devuelve success pero no sesión inmediata,
-        // pero con default de Supabase, podría requerir confirmación por correo, avisemos amablemente.
+        addToast('¡Cuenta creada! Haz iniciado sesión.', 'success');
       }
     }
     setLoading(false);
@@ -98,8 +162,8 @@ export const Login = () => {
           )}
 
           <div className="flex flex-col gap-3 pt-2">
-            <Button type="submit" fullWidth isLoading={loading}>
-              {isLoginView ? 'Iniciar sesión' : 'Crear cuenta'}
+            <Button type="submit" fullWidth isLoading={loading} disabled={timeLeft > 0}>
+              {timeLeft > 0 ? `Intenta de nuevo en ${timeLeft}s...` : (isLoginView ? 'Iniciar sesión' : 'Crear cuenta')}
             </Button>
             
             <p className="text-center text-sm text-slate-500 mt-2">

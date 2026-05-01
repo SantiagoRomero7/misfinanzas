@@ -3,9 +3,14 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Transaction, TransactionType } from '@/types';
 import { formatCurrency, formatDateColombia, formatTimeColombia, getTodayColombia } from '@/lib/formatters';
-import { getCategoryIcon, getCategoryColor, INCOME_CATEGORIES, EXPENSE_CATEGORIES } from '@/lib/constants';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Calendar as CalendarIcon, FileText } from 'lucide-react';
+import { getCategoryIcon, getCategoryColor, INCOME_CATEGORIES, EXPENSE_CATEGORIES, isOtrosCategory } from '@/lib/constants';
+import { sanitize } from '@/lib/utils';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Calendar as CalendarIcon, FileText, Tag, Receipt, Search } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useToastStore } from '@/store/useToastStore';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { startOfMonth, endOfMonth, addMonths, subMonths, format } from 'date-fns';
@@ -18,10 +23,14 @@ export const Transactions = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [activeTab, setActiveTab] = useState<'all' | 'income' | 'expense'>('all');
   
-  // Modal state
+  const { addToast } = useToastStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [txToDelete, setTxToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [type, setType] = useState<TransactionType>('income');
+  const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState(0);
   const [amountDisplay, setAmountDisplay] = useState('');
 
@@ -36,22 +45,33 @@ export const Transactions = () => {
     setAmount(Number(formatted.replace(/\./g, '')));
   };
   const [category, setCategory] = useState('');
+  const [customCategoryName, setCustomCategoryName] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(getTodayColombia());
 
+  const [customCategories, setCustomCategories] = useState<any[]>([]);
+
   useEffect(() => {
     fetchTransactions();
+    fetchCustomCategories();
   }, [currentMonth]);
+
+  const fetchCustomCategories = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', user.id);
+    if (data) setCustomCategories(data);
+  };
 
   const fetchTransactions = async () => {
     if (!user) return;
     setLoading(true);
     
-    // Convert to UTC dates for Supabase filtering based on local month
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
     
-    // For date fields stored as YYYY-MM-DD, simple string comparison works too
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
 
@@ -70,18 +90,31 @@ export const Transactions = () => {
     setLoading(false);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('¿Seguro que deseas eliminar esta transacción?')) return;
+  const { isRefreshing, pullDistance } = usePullToRefresh(fetchTransactions);
+
+  const handleDeleteClick = (id: string) => {
+    setTxToDelete(id);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!txToDelete) return;
     
+    setIsDeleting(true);
     const { error } = await supabase
       .from('transactions')
       .delete()
-      .eq('id', id);
+      .eq('id', txToDelete);
       
+    setIsDeleting(false);
+    setIsConfirmDeleteOpen(false);
+
     if (!error) {
-      setTransactions(transactions.filter(t => t.id !== id));
+      setTransactions(transactions.filter(t => t.id !== txToDelete));
+      addToast('Transacción eliminada', 'success');
+      setTxToDelete(null);
     } else {
-      alert('Error eliminando la transacción');
+      addToast('Error eliminando la transacción', 'error');
     }
   };
 
@@ -89,31 +122,63 @@ export const Transactions = () => {
     e.preventDefault();
     if (!user || !amount || !category) return;
 
+    let finalCategory = category;
+    let finalDescription = description;
+
+    if (isOtrosCategory(category) && customCategoryName.trim()) {
+      const customName = sanitize(customCategoryName.trim());
+      finalCategory = customName;
+
+      // Check if category exists
+      const { data: existing } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('name', customName)
+        .single();
+      
+      if (!existing) {
+        await supabase.from('categories').insert({
+          user_id: user.id,
+          name: customName,
+          icon: 'Tag',
+          color: '#8B5CF6',
+          type: type === 'income' ? 'income' : 'expense'
+        });
+        // refetch to see it in modal later if needed
+        fetchCustomCategories();
+      }
+    }
+
     setIsSubmitting(true);
-    const { error } = await supabase.from('transactions').insert({
-      user_id: user.id,
-      type,
-      amount: amount,
-      category,
-      description,
-      date: date || getTodayColombia()
-    });
+    const { error } = await supabase
+      .from('transactions')
+      .insert({
+        user_id: user.id,
+        type,
+        amount,
+        category: finalCategory,
+        description: sanitize(description),
+        date: date || getTodayColombia(),
+      });
 
     setIsSubmitting(false);
     if (!error) {
       setIsModalOpen(false);
       resetForm();
       fetchTransactions();
+      addToast('Transacción guardada', 'success');
     } else {
-      alert('Error al guardar la transacción');
+      addToast('Error al guardar la transacción', 'error');
     }
   };
 
   const resetForm = () => {
-    setType('income');
+    setType('expense');
     setAmount(0);
     setAmountDisplay('');
     setCategory('');
+    setCustomCategoryName('');
     setDescription('');
     setDate(getTodayColombia());
   };
@@ -130,12 +195,18 @@ export const Transactions = () => {
     return acc;
   }, {} as Record<string, Transaction[]>);
 
-  const categoriesToList = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const baseCategories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const customCatsForType = customCategories.filter(c => c.type === type || c.type === 'both').map(c => ({
+    name: c.name,
+    icon: Tag,
+    color: c.color || '#8B5CF6'
+  }));
+  const categoriesToList = [...baseCategories, ...customCatsForType];
 
   return (
     <div className="space-y-4 pb-24 px-4 w-full overflow-x-hidden">
       {/* Header Month Filter */}
-      <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm">
+      <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm mt-2">
         <button 
           onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
           className="p-2 text-slate-400 hover:text-slate-600 focus:outline-none"
@@ -156,38 +227,66 @@ export const Transactions = () => {
       {/* Tabs */}
       <div className="flex p-1 bg-slate-200/50 rounded-xl">
         {[
-          { id: 'all', label: 'Todos' },
-          { id: 'income', label: 'Ingresos' },
-          { id: 'expense', label: 'Gastos' }
+          { id: 'all', label: 'Todos', count: transactions.length },
+          { id: 'income', label: 'Ingresos', count: transactions.filter(t => t.type === 'income').length },
+          { id: 'expense', label: 'Gastos', count: transactions.filter(t => t.type === 'expense').length }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-all focus:outline-none 
+            className={`flex-1 py-1.5 text-[11px] sm:text-sm font-bold rounded-lg transition-all focus:outline-none flex items-center justify-center gap-1.5
               ${activeTab === tab.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             {tab.label}
+            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab.id ? 'bg-slate-100 text-slate-600' : 'bg-slate-300/30 text-slate-400'}`}>
+              {tab.count}
+            </span>
           </button>
         ))}
       </div>
+
+      {/* Pull to Refresh Indicator */}
+      {pullDistance > 0 && (
+        <div 
+          className="flex justify-center items-center py-2 transition-all overflow-hidden"
+          style={{ height: pullDistance, opacity: pullDistance / 60 }}
+        >
+          <div className={`transition-transform duration-300 ${pullDistance > 60 ? 'rotate-180' : ''}`}>
+            <Plus size={20} className="text-primary" />
+          </div>
+        </div>
+      )}
 
       {/* List */}
       <div className="space-y-5">
         {loading ? (
           <div className="space-y-3 mt-4">
-            {[1, 2, 3].map(i => <div key={i} className="h-16 bg-slate-200 animate-pulse rounded-2xl"></div>)}
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="flex flex-col gap-2 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="w-12 h-12 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/4" />
+                  </div>
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : Object.keys(groupedTransactions).length === 0 ? (
-          <div className="text-center py-10">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4 text-slate-400">
-              <FileText size={32} />
+          <div className="text-center py-16 px-6 bg-white rounded-3xl border border-slate-100 shadow-sm animate-fade-in">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-slate-50 mb-6 text-slate-300">
+              <Receipt size={40} />
             </div>
-            <p className="text-slate-500 font-medium">No hay transacciones este mes.</p>
+            <h4 className="font-bold text-slate-800 mb-2 text-lg">Sin transacciones en {format(currentMonth, 'MMMM', { locale: es })}</h4>
+            <p className="text-sm text-slate-500 mb-8 max-w-xs mx-auto">No has registrado ningún movimiento este mes. ¡Empieza ahora!</p>
+            <Button onClick={() => { resetForm(); setIsModalOpen(true); }} className="px-8 shadow-lg shadow-primary/20">
+              Agregar primera transacción
+            </Button>
           </div>
         ) : (
           Object.keys(groupedTransactions).sort((a,b) => new Date(b).getTime() - new Date(a).getTime()).map(dateKey => {
-            // Determine "Hoy", "Ayer" or Date string
-            // Determine "Hoy" or Date string
             const todayStr = getTodayColombia();
             const isToday = dateKey === todayStr;
             let displayDate = formatDateColombia(dateKey);
@@ -201,15 +300,17 @@ export const Transactions = () => {
                   {groupedTransactions[dateKey].map(t => {
                     const Icon = getCategoryIcon(t.category);
                     const color = getCategoryColor(t.category);
+                    const displayCat = t.category;
+                    
                     return (
                       <div key={t.id} className="flex flex-col sm:flex-row bg-white rounded-2xl border border-slate-100 shadow-sm group">
                         <div className="flex items-center justify-between p-4 flex-1">
                           <div className="flex items-center gap-4 flex-1 overflow-hidden">
-                            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-sm" style={{ backgroundColor: `${color}15`, color }}>
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-sm shrink-0" style={{ backgroundColor: `${color}15`, color }}>
                               <Icon size={22} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-slate-800 text-sm truncate">{t.category}</p>
+                              <p className="font-semibold text-slate-800 text-sm truncate">{displayCat}</p>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {t.description && <span className="text-xs text-slate-500 truncate max-w-[120px]">{t.description}</span>}
                                 {t.description && <span className="text-slate-300">•</span>}
@@ -225,15 +326,14 @@ export const Transactions = () => {
                           </div>
                           
                           <button 
-                            onClick={() => handleDelete(t.id)}
-                            className="ml-3 p-2 text-slate-300 hover:text-expense hover:bg-expense/10 rounded-full transition-colors hidden sm:block md:group-hover:block"
+                            onClick={() => handleDeleteClick(t.id)}
+                            className="ml-3 p-2 text-slate-300 hover:text-expense hover:bg-expense/10 rounded-full transition-colors hidden sm:block md:group-hover:block focus:outline-none"
                           >
                             <Trash2 size={18} />
                           </button>
                         </div>
-                        {/* Mobile delete button below */}
                         <div className="border-t border-slate-50 p-2 sm:hidden flex justify-end">
-                          <button onClick={() => handleDelete(t.id)} className="flex items-center gap-1 text-xs text-expense font-medium px-2 py-1 bg-expense/10 rounded-lg">
+                          <button onClick={() => handleDeleteClick(t.id)} className="flex items-center gap-1 text-xs text-expense font-medium px-2 py-1 bg-expense/10 rounded-lg">
                             <Trash2 size={14} /> Eliminar
                           </button>
                         </div>
@@ -249,7 +349,7 @@ export const Transactions = () => {
 
       {/* FAB */}
       <button 
-        onClick={() => setIsModalOpen(true)}
+        onClick={() => { resetForm(); setIsModalOpen(true); }}
         className="fixed bottom-20 right-5 w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all z-40"
       >
         <Plus size={24} />
@@ -294,7 +394,7 @@ export const Transactions = () => {
 
           <div>
             <p className="text-slate-700 text-sm font-medium mb-3">Categoría</p>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-3 mb-2">
               {categoriesToList.map(cat => {
                 const isSelected = category === cat.name;
                 return (
@@ -315,15 +415,31 @@ export const Transactions = () => {
                 );
               })}
             </div>
+            
+            {/* Custom Category Input for "Otros" */}
+            {isOtrosCategory(category) && (
+              <div className="mt-4 animate-fade-in">
+                <Input
+                  label="¿Cómo quieres llamar esta categoría?"
+                  value={customCategoryName}
+                  onChange={(e) => setCustomCategoryName(e.target.value)}
+                  placeholder="Ej. Mascota, Gym, Médico"
+                  icon={<Tag size={18} />}
+                  required
+                />
+              </div>
+            )}
           </div>
 
-          <Input
-            label="Descripción (Opcional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej. Cena con amigos"
-            icon={<FileText size={18} />}
-          />
+          {!isOtrosCategory(category) && (
+            <Input
+              label="Descripción (Opcional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej. Cena con amigos"
+              icon={<FileText size={18} />}
+            />
+          )}
 
           <Input
             label="Fecha"
@@ -339,6 +455,15 @@ export const Transactions = () => {
           </Button>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={handleConfirmDelete}
+        title="Eliminar Transacción"
+        description="¿Estás seguro de que deseas eliminar esta transacción? Esta acción no se puede deshacer y afectará tus presupuestos."
+        isLoading={isDeleting}
+      />
     </div>
   );
 };

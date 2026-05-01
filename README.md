@@ -34,6 +34,17 @@
 
 ---
 
+## 🔐 Seguridad y Ciberseguridad
+
+- **Rate Limiting en Login:** Máximo 5 intentos fallidos, bloqueo de 30 segundos con contador visible.
+- **Sanitización de Inputs:** Todos los campos de texto son limpiados de caracteres peligrosos (`<>{}`) antes de enviarse a Supabase.
+- **Timeout de Sesión:** Cierre automático por inactividad de 30 minutos con aviso previo de 1 minuto.
+- **Headers de Seguridad HTTP:** Configurados en Vercel: X-Frame-Options, X-XSS-Protection, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
+- **Row Level Security:** Cada query a Supabase es validada a nivel de base de datos con auth.uid().
+- **Variables de Entorno:** Credenciales nunca hardcodeadas, siempre desde import.meta.env.
+
+---
+
 ## 🛠️ Tech Stack
 
 El núcleo tecnológico del sistema descansa en:
@@ -81,6 +92,17 @@ La base de datos se despliega en Supabase incluyendo 4 tablas nativas vinculadas
 
 **🔐 Row Level Security (RLS)**:
 Las reglas forzan una política donde cada inserción, edición, búsqueda y borrado son autorizados exclusivamente si el token JWT actual le pertenece al UID de dichas filas en Supabase. Si alguien intercepta tu API temporalmente, no podrá ver, pedir o corromper datos de otros. 
+
+---
+
+## 📅 Lógica de Límites de Presupuesto
+
+Explica cómo el sistema diferencia límites mensuales y semanales:
+
+- **Mensual:** Suma todas las transacciones de tipo `expense` entre el primer y último día del mes actual.
+- **Semanal:** Suma transacciones desde el lunes de la semana actual hasta hoy (zona horaria Colombia).
+- Si una categoría tiene límite mensual Y semanal, cada uno se calcula y muestra por separado en su tab.
+- Los gastos se asocian al límite por nombre exacto de categoría (match directo).
 
 ---
 
@@ -139,6 +161,38 @@ Para instalar:
 |---------|---------|---------|
 | `VITE_SUPABASE_URL` | Tu URI individual del cluster Supabase. | ✅ Sí |
 | `VITE_SUPABASE_ANON_KEY`| Token JWT habilitador temporal. | ✅ Sí |
+
+---
+
+## 📦 Historial de Cambios Principales
+
+### v1.0.0 - MVP Base
+- Setup inicial React + Vite + Supabase + PWA
+- Autenticación con email/password
+- Dashboard con datos reales de Supabase
+- Zona horaria Colombia
+
+### v1.1.0 - Módulos Completos  
+- Transacciones con filtro por mes y categorías
+- Presupuesto mensual y semanal con barras de progreso
+- Metas de ahorro con progreso circular SVG
+- Reportes con gráficas Recharts
+
+### v1.2.0 - UX y Categorías
+- Categorías personalizadas como ciudadanos de primera clase
+- Formato automático COP con puntos de miles en inputs
+- Toast notifications en todas las acciones
+- Skeleton loaders y empty states mejorados
+- Confirmación antes de eliminar
+
+### v1.3.0 - Seguridad y Pulido
+- Rate limiting en login (5 intentos, bloqueo 30s)
+- Timeout de sesión por inactividad (30 min)
+- Sanitización de inputs en toda la app
+- Headers de seguridad HTTP en Vercel
+- Editar y eliminar límites de presupuesto
+- Logo PWA generado (192x192, 512x512, 180x180)
+- README completo con documentación total
 
 ---
 

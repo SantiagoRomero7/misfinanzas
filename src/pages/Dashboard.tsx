@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, getTodayColombia, formatDateColombia } from '@/lib/formatters';
 import { getCategoryIcon, getCategoryColor } from '@/lib/constants';
 import { TrendingUp, TrendingDown, Wallet, Plus } from 'lucide-react';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 
 export const Dashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   
   const [totalIncome, setTotalIncome] = useState(0);
@@ -24,15 +27,26 @@ export const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [user]);
+  }, [user, location.pathname]);
 
   const fetchDashboardData = async () => {
     if (!user) return;
     setLoading(true);
 
-    const now = new Date();
-    const startStr = format(startOfMonth(now), 'yyyy-MM-dd');
-    const endStr = format(endOfMonth(now), 'yyyy-MM-dd');
+    const currentMonthStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit'
+    }).format(new Date()).slice(0, 7);
+
+    const getMonthRange = (monthStr: string) => {
+      const date = new Date(monthStr + '-01T00:00:00');
+      const firstDay = format(startOfMonth(date), 'yyyy-MM-dd');
+      const lastDay = format(endOfMonth(date), 'yyyy-MM-dd');
+      return { firstDay, lastDay };
+    };
+
+    const { firstDay: startStr, lastDay: endStr } = getMonthRange(currentMonthStr);
 
     // 1. Fetch Month Transactions
     const { data: txData } = await supabase
@@ -63,7 +77,7 @@ export const Dashboard = () => {
       .from('monthly_budgets')
       .select('limit_amount')
       .eq('user_id', user.id)
-      .eq('month', format(now, 'yyyy-MM'));
+      .eq('month', currentMonthStr);
 
     const totalLimit = (budgets || []).reduce((acc, b) => acc + Number(b.limit_amount), 0);
     setBudgetPct(totalLimit > 0 ? Math.min((expense / totalLimit) * 100, 100) : 0);
@@ -81,18 +95,29 @@ export const Dashboard = () => {
     setLoading(false);
   };
 
+  const { isRefreshing, pullDistance } = usePullToRefresh(fetchDashboardData);
+
   const balance = totalIncome - totalExpense;
 
   if (loading) {
     return (
-      <div className="space-y-6 pb-24 px-4 w-full h-full overflow-y-auto overflow-x-hidden min-h-screen-safe">
-        <div className="h-48 bg-slate-200 animate-pulse rounded-3xl w-full"></div>
+      <div className="space-y-6 pb-24 px-4 w-full h-full overflow-y-auto overflow-x-hidden min-h-screen-safe mt-2">
+        <Skeleton className="h-48 w-full rounded-3xl" />
         <div className="grid grid-cols-2 gap-4">
-          <div className="h-24 bg-slate-200 animate-pulse rounded-2xl w-full"></div>
-          <div className="h-24 bg-slate-200 animate-pulse rounded-2xl w-full"></div>
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
         </div>
         <div className="space-y-3">
-          {[1,2,3].map(i => <div key={i} className="h-16 bg-slate-200 animate-pulse rounded-2xl w-full"></div>)}
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-1/4" />
+              </div>
+              <Skeleton className="h-5 w-16" />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -100,6 +125,17 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6 pb-24 px-4 w-full h-full overflow-y-auto overflow-x-hidden min-h-screen-safe">
+      {/* Pull to Refresh Indicator */}
+      {pullDistance > 0 && (
+        <div 
+          className="flex justify-center items-center py-2 transition-all overflow-hidden"
+          style={{ height: pullDistance, opacity: pullDistance / 60 }}
+        >
+          <div className={`transition-transform duration-300 ${pullDistance > 60 ? 'rotate-180' : ''}`}>
+            <Plus size={20} className="text-primary" />
+          </div>
+        </div>
+      )}
       
       {/* Balance Summary */}
       <div className="bg-primary rounded-3xl py-6 px-5 sm:px-6 text-white shadow-lg shadow-primary/20 relative overflow-hidden w-full h-auto mt-2">
@@ -156,13 +192,13 @@ export const Dashboard = () => {
       
       <div className="space-y-3 w-full">
         {recentTransactions.length === 0 ? (
-          <div className="text-center py-12 px-6 bg-white rounded-3xl border border-slate-100 shadow-sm w-full mx-auto">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-50 mb-4 text-slate-400">
-              <Wallet size={32} />
+          <div className="text-center py-16 px-6 bg-white rounded-3xl border border-slate-100 shadow-sm w-full mx-auto animate-fade-in">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-slate-50 mb-6 text-slate-300">
+              <Wallet size={40} />
             </div>
-            <h4 className="font-bold text-slate-800 mb-2">Aún no tienes transacciones</h4>
-            <p className="text-sm text-slate-500 mb-6">Comienza a registrar tus gastos e ingresos para tomar el control de tus finanzas.</p>
-            <Button onClick={() => navigate('/transactions')} fullWidth>
+            <h4 className="font-bold text-slate-800 mb-2 text-lg">Aún no tienes transacciones</h4>
+            <p className="text-sm text-slate-500 mb-8 max-w-xs mx-auto">Comienza a registrar tus gastos e ingresos para tomar el control de tus finanzas.</p>
+            <Button onClick={() => navigate('/transactions')} fullWidth className="shadow-lg shadow-primary/20">
               <Plus size={18} className="mr-2" /> Agregar transacción
             </Button>
           </div>
@@ -172,6 +208,8 @@ export const Dashboard = () => {
             const color = getCategoryColor(t.category);
             const todayStr = getTodayColombia();
             
+            const displayCat = t.category;
+
             return (
               <div key={t.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm w-full gap-2">
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -179,7 +217,7 @@ export const Dashboard = () => {
                     <Icon size={20} />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-800 text-sm truncate">{t.category}</p>
+                    <p className="font-semibold text-slate-800 text-sm truncate">{displayCat}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {t.description && <span className="text-[10px] sm:text-xs text-slate-500 truncate max-w-[80px] sm:max-w-[120px]">{t.description}</span>}
                       {t.description && <span className="text-slate-300">•</span>}

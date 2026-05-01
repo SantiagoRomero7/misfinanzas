@@ -3,10 +3,14 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
 import { SavingsGoal } from '@/types';
 import { formatCurrency, getTodayColombia } from '@/lib/formatters';
-import { Plus, Target, Check, Calendar } from 'lucide-react';
+import { Plus, Target, Check, Calendar, Pencil, Trash2 } from 'lucide-react';
+import { sanitize } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useToastStore } from '@/store/useToastStore';
 import { differenceInDays, parseISO } from 'date-fns';
 
 // Simple Circular Progress Component
@@ -42,6 +46,7 @@ const CircularProgress = ({ percentage, color }: { percentage: number; color: st
 };
 
 export const Savings = () => {
+  const { addToast } = useToastStore();
   const { user } = useAuthStore();
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,12 +56,18 @@ export const Savings = () => {
   const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Edit/Delete state
+  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
+  const [deleteConfirmGoal, setDeleteConfirmGoal] = useState<SavingsGoal | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // New goal form
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState(0);
   const [targetAmountDisplay, setTargetAmountDisplay] = useState('');
   const [deadline, setDeadline] = useState('');
   const [color, setColor] = useState('#7C3AED'); // Default primary
+  const [icon, setIcon] = useState('Target');
 
   // Contribution form
   const [contribution, setContribution] = useState(0);
@@ -98,31 +109,101 @@ export const Savings = () => {
     setLoading(false);
   };
 
+  const resetGoalForm = () => {
+    setName('');
+    setTargetAmount(0);
+    setTargetAmountDisplay('');
+    setDeadline('');
+    setColor('#7C3AED');
+    setIcon('Target');
+    setEditingGoal(null);
+  };
+
+  const openCreateModal = () => {
+    resetGoalForm();
+    setIsGoalModalOpen(true);
+  };
+
+  const openEditModal = (goal: SavingsGoal) => {
+    console.log('Editing goal:', goal);
+    setEditingGoal(goal);
+    setName(goal.name);
+    setTargetAmount(goal.target_amount);
+    setTargetAmountDisplay(formatInputAmount(String(goal.target_amount)));
+    setDeadline(goal.deadline || '');
+    setColor(goal.color || '#7C3AED');
+    setIcon(goal.icon || 'Target');
+    setIsGoalModalOpen(true);
+  };
+
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !name || !targetAmount) return;
 
     setIsSubmitting(true);
-    const { error } = await supabase.from('savings_goals').insert({
-      user_id: user.id,
-      name,
-      target_amount: targetAmount,
-      current_amount: 0,
-      deadline: deadline || null,
-      color,
-      icon: 'Target' // Fixed for simplicity, can be dynamic
-    });
 
-    setIsSubmitting(false);
-    if (!error) {
-      setIsGoalModalOpen(false);
-      setName('');
-      setTargetAmount(0);
-      setTargetAmountDisplay('');
-      setDeadline('');
-      fetchGoals();
+    if (editingGoal) {
+      // UPDATE existing goal
+      const { error } = await supabase
+        .from('savings_goals')
+        .update({
+          name: sanitize(name),
+          target_amount: targetAmount,
+          deadline: deadline || null,
+          color,
+          icon
+        })
+        .eq('id', editingGoal.id);
+
+      setIsSubmitting(false);
+      if (!error) {
+        setIsGoalModalOpen(false);
+        resetGoalForm();
+        fetchGoals();
+        addToast('Meta actualizada', 'success');
+      } else {
+        addToast('Error actualizando la meta', 'error');
+      }
     } else {
-      alert('Error guardando la meta');
+      // INSERT new goal
+      const { error } = await supabase.from('savings_goals').insert({
+        user_id: user.id,
+        name: sanitize(name),
+        target_amount: targetAmount,
+        current_amount: 0,
+        deadline: deadline || null,
+        color,
+        icon
+      });
+
+      setIsSubmitting(false);
+      if (!error) {
+        setIsGoalModalOpen(false);
+        resetGoalForm();
+        fetchGoals();
+        addToast('Meta guardada', 'success');
+      } else {
+        addToast('Error guardando la meta', 'error');
+      }
+    }
+  };
+
+  const handleDeleteGoal = async () => {
+    if (!deleteConfirmGoal) return;
+    setIsDeleting(true);
+
+    const { error } = await supabase
+      .from('savings_goals')
+      .delete()
+      .eq('id', deleteConfirmGoal.id);
+
+    setIsDeleting(false);
+    if (!error) {
+      setGoals(goals.filter(g => g.id !== deleteConfirmGoal.id));
+      setDeleteConfirmGoal(null);
+      addToast('Meta eliminada', 'success');
+    } else {
+      addToast('Error eliminando la meta', 'error');
     }
   };
 
@@ -144,8 +225,9 @@ export const Savings = () => {
       setContribution(0);
       setContributionDisplay('');
       fetchGoals();
+      addToast('Aporte guardado', 'success');
     } else {
-      alert('Error agregando aporte');
+      addToast('Error agregando aporte', 'error');
     }
   };
 
@@ -163,12 +245,25 @@ export const Savings = () => {
 
       {loading ? (
         <div className="grid grid-cols-2 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-48 bg-slate-200 animate-pulse rounded-3xl"></div>)}
+          {[1,2,3,4].map(i => (
+            <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center gap-4">
+              <Skeleton className="w-20 h-20 rounded-full" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))}
         </div>
       ) : goals.length === 0 ? (
-         <div className="text-center py-10">
-           <p className="text-slate-500 font-medium">No tienes metas de ahorro.</p>
-         </div>
+        <div className="text-center py-16 px-6 bg-white rounded-3xl border border-slate-100 shadow-sm animate-fade-in mt-2">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-slate-50 mb-6 text-slate-300">
+            <Target size={40} />
+          </div>
+          <h4 className="font-bold text-slate-800 mb-2 text-lg">No tienes metas de ahorro</h4>
+          <p className="text-sm text-slate-500 mb-8 max-w-xs mx-auto">Define tus sueños y empieza a ahorrar para cumplirlos poco a poco.</p>
+          <Button onClick={openCreateModal} className="px-8 shadow-lg shadow-primary/20">
+            Crear primera meta
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 w-full">
           {goals.map(goal => {
@@ -182,13 +277,31 @@ export const Savings = () => {
                 onClick={() => { setSelectedGoal(goal); setIsContributionModalOpen(true); }}
                 className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col items-center justify-between transition-transform hover:scale-[1.02] active:scale-[0.98] outline-none relative overflow-hidden w-full h-auto"
               >
+                {/* Edit Button — top right */}
+                <div
+                  onClick={(e) => { e.stopPropagation(); openEditModal(goal); }}
+                  className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-slate-100 hover:bg-primary/10 flex items-center justify-center text-slate-400 hover:text-primary transition-colors"
+                >
+                  <Pencil size={13} />
+                </div>
+
+                {/* Delete Button — top left */}
+                <div
+                  onClick={(e) => { e.stopPropagation(); setDeleteConfirmGoal(goal); }}
+                  className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-slate-100 hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={13} />
+                </div>
+
                 {isCompleted && (
-                  <div className="absolute top-0 right-0 bg-success text-white px-2 py-1 rounded-bl-xl text-[10px] font-bold flex items-center gap-1 z-10">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-success text-white px-2 py-0.5 rounded-b-xl text-[10px] font-bold flex items-center gap-1 z-10">
                     <Check size={12} /> Logrado
                   </div>
                 )}
                 
-                <CircularProgress percentage={pct} color={goal.color || '#7C3AED'} />
+                <div className="mt-4">
+                  <CircularProgress percentage={pct} color={goal.color || '#7C3AED'} />
+                </div>
                 
                 <h3 className="font-bold text-slate-800 text-sm mb-1 truncate text-center">{goal.name}</h3>
                 <p className="text-xs text-slate-500 text-center mb-3">
@@ -209,14 +322,14 @@ export const Savings = () => {
 
       {/* FAB */}
       <button 
-        onClick={() => setIsGoalModalOpen(true)}
+        onClick={openCreateModal}
         className="fixed bottom-20 right-5 w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all z-40"
       >
         <Plus size={24} />
       </button>
 
-      {/* New Goal Modal */}
-      <Modal isOpen={isGoalModalOpen} onClose={() => setIsGoalModalOpen(false)} title="Nueva Meta">
+      {/* Create/Edit Goal Modal */}
+      <Modal isOpen={isGoalModalOpen} onClose={() => { setIsGoalModalOpen(false); resetGoalForm(); }} title={editingGoal ? 'Editar Meta' : 'Nueva Meta'}>
         <form onSubmit={handleSaveGoal} className="space-y-4 pb-4">
           <Input label="Nombre de la meta" required value={name} onChange={e => setName(e.target.value)} placeholder="Ej. Viaje a Cancún" />
           <Input label="Monto Objetivo" type="text" inputMode="numeric" required value={targetAmountDisplay} onChange={handleTargetChange} placeholder="0" />
@@ -235,9 +348,18 @@ export const Savings = () => {
             </div>
           </div>
 
-          <Button type="submit" fullWidth isLoading={isSubmitting}>Crear Meta</Button>
+          <Button type="submit" fullWidth isLoading={isSubmitting}>{editingGoal ? 'Guardar Cambios' : 'Crear Meta'}</Button>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={!!deleteConfirmGoal}
+        onClose={() => setDeleteConfirmGoal(null)}
+        onConfirm={handleDeleteGoal}
+        title="Eliminar Meta"
+        description={`¿Estás seguro de que deseas eliminar la meta "${deleteConfirmGoal?.name}"? Esta acción no se puede deshacer.`}
+        isLoading={isDeleting}
+      />
 
       {/* Contribute Modal */}
       <Modal isOpen={isContributionModalOpen} onClose={() => {setIsContributionModalOpen(false); setSelectedGoal(null)}} title="Agregar Aporte">

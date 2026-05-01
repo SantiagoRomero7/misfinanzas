@@ -16,9 +16,21 @@ export const Reports = () => {
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [customCategories, setCustomCategories] = useState<any[]>([]);
+
   useEffect(() => {
     fetchData();
+    fetchCustomCategories();
   }, [currentMonth]);
+
+  const fetchCustomCategories = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', user.id);
+    if (data) setCustomCategories(data);
+  };
 
   const fetchData = async () => {
     if (!user) return;
@@ -28,7 +40,7 @@ export const Reports = () => {
     const sixMonthsAgo = format(subMonths(new Date(), 5), 'yyyy-MM-01');
     const { data } = await supabase
       .from('transactions')
-      .select('date, amount, type, category')
+      .select('date, amount, type, category, description')
       .eq('user_id', user.id)
       .gte('date', sixMonthsAgo);
 
@@ -63,13 +75,18 @@ export const Reports = () => {
   const pieChartData = useMemo(() => {
     const expenses = transactions.filter(t => t.type === 'expense' && t.date.startsWith(currentMonthStr));
     const grouped = expenses.reduce((acc, t) => {
-      if (!acc[t.category]) acc[t.category] = { name: t.category, value: 0, fill: getCategoryColor(t.category) };
-      acc[t.category].value += Number(t.amount);
+      let catName = t.category;
+
+      if (!acc[catName]) {
+        const color = getCategoryColor(t.category);
+        acc[catName] = { name: catName, value: 0, fill: color };
+      }
+      acc[catName].value += Number(t.amount);
       return acc;
     }, {} as Record<string, {name: string, value: number, fill: string}>);
     
     return Object.values(grouped).sort((a,b) => b.value - a.value); // Sort biggest first
-  }, [transactions, currentMonthStr]);
+  }, [transactions, currentMonthStr, customCategories]);
 
   // Summaries calculation
   const totalMonthExpense = pieChartData.reduce((acc, c) => acc + c.value, 0);

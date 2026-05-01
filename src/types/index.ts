@@ -39,4 +39,5 @@ export interface MonthlyBudget {
   month: string;
   category: string;
   limit_amount: number;
+  period: 'weekly' | 'monthly';
 }
