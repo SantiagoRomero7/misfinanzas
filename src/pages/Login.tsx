@@ -65,7 +65,7 @@ export const Login = () => {
     if (isRecoverView) {
       const { error: authError } = await supabase.auth.resetPasswordForEmail(
         email,
-        { redirectTo: 'https://misfinanzas-two.vercel.app/reset-password' }
+        { redirectTo: `${window.location.origin}/reset-password` }
       );
       if (authError) {
         setError(authError.message);
