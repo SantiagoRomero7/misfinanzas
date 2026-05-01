@@ -18,7 +18,6 @@ export const Login = () => {
   const [success, setSuccess] = useState<string | null>(null);
   
   const [attempts, setAttempts] = useState(0);
-  const [lockoutTime, setLockoutTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export const Login = () => {
     if (savedLockout) {
       const remaining = Math.ceil((parseInt(savedLockout) - Date.now()) / 1000);
       if (remaining > 0) {
-        setLockoutTime(parseInt(savedLockout));
         setTimeLeft(remaining);
       } else {
         localStorage.removeItem('login_lockout');
@@ -38,12 +36,11 @@ export const Login = () => {
   }, []);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
-            setLockoutTime(null);
             localStorage.removeItem('login_lockout');
             return 0;
           }
@@ -81,7 +78,6 @@ export const Login = () => {
 
         if (newAttempts >= 5) {
           const lockout = Date.now() + 30000;
-          setLockoutTime(lockout);
           setTimeLeft(30);
           localStorage.setItem('login_lockout', lockout.toString());
           addToast('Demasiados intentos. Bloqueado por 30s.', 'error');

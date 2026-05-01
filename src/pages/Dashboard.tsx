@@ -95,7 +95,7 @@ export const Dashboard = () => {
     setLoading(false);
   };
 
-  const { isRefreshing, pullDistance } = usePullToRefresh(fetchDashboardData);
+  const { isRefreshing: _isRefreshing, pullDistance } = usePullToRefresh(fetchDashboardData);
 
   const balance = totalIncome - totalExpense;
 

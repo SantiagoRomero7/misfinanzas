@@ -5,7 +5,7 @@ import { Transaction, TransactionType } from '@/types';
 import { formatCurrency, formatDateColombia, formatTimeColombia, getTodayColombia } from '@/lib/formatters';
 import { getCategoryIcon, getCategoryColor, INCOME_CATEGORIES, EXPENSE_CATEGORIES, isOtrosCategory } from '@/lib/constants';
 import { sanitize } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Calendar as CalendarIcon, FileText, Tag, Receipt, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Calendar as CalendarIcon, FileText, Tag, Receipt } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -90,7 +90,7 @@ export const Transactions = () => {
     setLoading(false);
   };
 
-  const { isRefreshing, pullDistance } = usePullToRefresh(fetchTransactions);
+  const { isRefreshing: _isRefreshing, pullDistance } = usePullToRefresh(fetchTransactions);
 
   const handleDeleteClick = (id: string) => {
     setTxToDelete(id);
@@ -123,7 +123,6 @@ export const Transactions = () => {
     if (!user || !amount || !category) return;
 
     let finalCategory = category;
-    let finalDescription = description;
 
     if (isOtrosCategory(category) && customCategoryName.trim()) {
       const customName = sanitize(customCategoryName.trim());

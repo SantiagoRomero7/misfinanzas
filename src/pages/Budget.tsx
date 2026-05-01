@@ -209,6 +209,7 @@ export const Budget = () => {
     }
 
     setIsSubmitting(true);
+    let budgetError;
     
     if (editingId) {
       const res = await supabase.from('monthly_budgets').update({ 
@@ -216,12 +217,12 @@ export const Budget = () => {
         category: finalCategory,
         period: editPeriod
       }).eq('id', editingId);
-      error = res.error;
+      budgetError = res.error;
     } else {
       const existing = budgets.find(b => b.category === finalCategory && b.period === editPeriod);
       if (existing) {
         const res = await supabase.from('monthly_budgets').update({ limit_amount: editLimit }).eq('id', existing.id);
-        error = res.error;
+        budgetError = res.error;
       } else {
         const res = await supabase.from('monthly_budgets').insert({
           user_id: user.id,
@@ -230,12 +231,12 @@ export const Budget = () => {
           limit_amount: editLimit,
           period: editPeriod
         });
-        error = res.error;
+        budgetError = res.error;
       }
     }
 
     setIsSubmitting(false);
-    if (!error) {
+    if (!budgetError) {
       setIsModalOpen(false);
       setEditLimit(0);
       setEditLimitDisplay('');
