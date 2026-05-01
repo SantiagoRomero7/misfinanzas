@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrency, getTodayColombia } from '@/lib/formatters';
 import { getCategoryColor } from '@/lib/constants';
 import { ChevronLeft, ChevronRight, BarChart3, PieChart } from 'lucide-react';
 import { subMonths, addMonths, format } from 'date-fns';
@@ -12,7 +12,7 @@ type TransactionData = { date: string; amount: number; type: string; category: s
 
 export const Reports = () => {
   const { user } = useAuthStore();
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date(getTodayColombia() + 'T00:00:00'));
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,7 +37,8 @@ export const Reports = () => {
     setLoading(true);
     
     // Fetch last 6 months to support the BarChart appropriately
-    const sixMonthsAgo = format(subMonths(new Date(), 5), 'yyyy-MM-01');
+    const colombiaToday = new Date(getTodayColombia() + 'T00:00:00');
+    const sixMonthsAgo = format(subMonths(colombiaToday, 5), 'yyyy-MM-01');
     const { data } = await supabase
       .from('transactions')
       .select('date, amount, type, category, description')
@@ -53,8 +54,9 @@ export const Reports = () => {
     const dataMap: Record<string, { month: string, ingresos: number, gastos: number }> = {};
     
     // Initialize last 6 months
+    const colombiaToday = new Date(getTodayColombia() + 'T00:00:00');
     for (let i = 5; i >= 0; i--) {
-       const m = subMonths(new Date(), i);
+       const m = subMonths(colombiaToday, i);
        const key = format(m, 'yyyy-MM');
        dataMap[key] = { month: format(m, 'MMM', { locale: es }).toUpperCase(), ingresos: 0, gastos: 0 };
     }

@@ -20,7 +20,7 @@ export const Transactions = () => {
   const { user } = useAuthStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date(getTodayColombia() + 'T00:00:00'));
   const [activeTab, setActiveTab] = useState<'all' | 'income' | 'expense'>('all');
   
   const { addToast } = useToastStore();

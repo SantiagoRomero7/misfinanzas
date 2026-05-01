@@ -105,7 +105,7 @@ export const Dashboard = () => {
 
   const { isRefreshing: _isRefreshing, pullDistance } = usePullToRefresh(fetchDashboardData);
 
-  const currentMonthName = new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date());
+  const currentMonthName = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', month: 'long' }).format(new Date());
 
   if (loading) {
     return (
