@@ -17,6 +17,7 @@ export const Dashboard = () => {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   
+  const [balance, setBalance] = useState(0);
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -48,29 +49,36 @@ export const Dashboard = () => {
 
     const { firstDay: startStr, lastDay: endStr } = getMonthRange(currentMonthStr);
 
-    // 1. Fetch Month Transactions
+    // 1. Fetch All Transactions
     const { data: txData } = await supabase
       .from('transactions')
       .select('*')
       .eq('user_id', user.id)
-      .gte('date', startStr)
-      .lte('date', endStr)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
 
-    let income = 0;
-    let expense = 0;
+    let histIncome = 0;
+    let histExpense = 0;
+    let monthIncome = 0;
+    let monthExpense = 0;
 
     if (txData) {
       txData.forEach(t => {
-        if (t.type === 'income') income += Number(t.amount);
-        else expense += Number(t.amount);
+        const amt = Number(t.amount);
+        if (t.type === 'income') {
+          histIncome += amt;
+          if (t.date >= startStr && t.date <= endStr) monthIncome += amt;
+        } else {
+          histExpense += amt;
+          if (t.date >= startStr && t.date <= endStr) monthExpense += amt;
+        }
       });
       setRecentTransactions(txData.slice(0, 5)); // show latest 5
     }
 
-    setTotalIncome(income);
-    setTotalExpense(expense);
+    setBalance(histIncome - histExpense);
+    setTotalIncome(monthIncome);
+    setTotalExpense(monthExpense);
 
     // 2. Fetch Budgets
     const { data: budgets } = await supabase
@@ -80,7 +88,7 @@ export const Dashboard = () => {
       .eq('month', currentMonthStr);
 
     const totalLimit = (budgets || []).reduce((acc, b) => acc + Number(b.limit_amount), 0);
-    setBudgetPct(totalLimit > 0 ? Math.min((expense / totalLimit) * 100, 100) : 0);
+    setBudgetPct(totalLimit > 0 ? Math.min((monthExpense / totalLimit) * 100, 100) : 0);
 
     // 3. Fetch Savings Goals
     const { data: savings } = await supabase
@@ -97,7 +105,7 @@ export const Dashboard = () => {
 
   const { isRefreshing: _isRefreshing, pullDistance } = usePullToRefresh(fetchDashboardData);
 
-  const balance = totalIncome - totalExpense;
+  const currentMonthName = new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date());
 
   if (loading) {
     return (
@@ -143,7 +151,7 @@ export const Dashboard = () => {
           <Wallet size={120} className="-mr-8 -mt-8" />
         </div>
         <div className="relative z-10 w-full">
-          <p className="text-primary-foreground/80 text-sm font-medium mb-1">Balance del Mes</p>
+          <p className="text-primary-foreground/80 text-sm font-medium mb-1">Balance Total</p>
           <h2 className="text-3xl font-bold break-words whitespace-normal leading-tight">
             {formatCurrency(balance)}
           </h2>
@@ -152,13 +160,13 @@ export const Dashboard = () => {
         <div className="flex justify-between mt-6 pt-5 border-t border-white/20 relative z-10 w-full gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1 text-primary-foreground/80 text-[10px] sm:text-xs mb-1">
-              <TrendingUp size={14} className="text-success shrink-0" /> Ingresos
+              <TrendingUp size={14} className="text-success shrink-0" /> Ingresos de {currentMonthName}
             </div>
             <p className="font-semibold text-sm sm:text-base truncate">{formatCurrency(totalIncome)}</p>
           </div>
           <div className="flex-1 min-w-0 text-right sm:text-left">
             <div className="flex items-center justify-end sm:justify-start gap-1 text-primary-foreground/80 text-[10px] sm:text-xs mb-1">
-              <TrendingDown size={14} className="text-expense shrink-0" /> Gastos
+              <TrendingDown size={14} className="text-expense shrink-0" /> Gastos de {currentMonthName}
             </div>
             <p className="font-semibold text-sm sm:text-base truncate">{formatCurrency(totalExpense)}</p>
           </div>
