@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
 import { SavingsGoal } from '@/types';
-import { formatCurrency, getTodayColombia } from '@/lib/formatters';
-import { Plus, Target, Check, Calendar, Pencil, Trash2 } from 'lucide-react';
+import { formatCurrency, getTodayColombia, formatDateColombia } from '@/lib/formatters';
+import { Plus, Target, Check, Calendar, Pencil, Trash2, Wallet, PlusCircle } from 'lucide-react';
 import { sanitize } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -12,6 +12,14 @@ import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToastStore } from '@/store/useToastStore';
 import { differenceInDays, parseISO } from 'date-fns';
+
+type ContributionSource = 'balance' | 'additional';
+
+interface ContributionRecord {
+  amount: number;
+  date: string;
+  description: string | null;
+}
 
 // Simple Circular Progress Component
 const CircularProgress = ({ percentage, color }: { percentage: number; color: string }) => {
@@ -72,6 +80,11 @@ export const Savings = () => {
   // Contribution form
   const [contribution, setContribution] = useState(0);
   const [contributionDisplay, setContributionDisplay] = useState('');
+  const [contributionSource, setContributionSource] = useState<ContributionSource>('balance');
+
+  // Contribution history
+  const [contributionHistory, setContributionHistory] = useState<ContributionRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const formatInputAmount = (value: string) => {
     const numbers = value.replace(/\D/g, '');
@@ -109,6 +122,21 @@ export const Savings = () => {
     setLoading(false);
   };
 
+  const fetchContributionHistory = async (goal: SavingsGoal) => {
+    if (!user) return;
+    setLoadingHistory(true);
+    const { data } = await supabase
+      .from('transactions')
+      .select('amount, date, description')
+      .eq('user_id', user.id)
+      .eq('category', `Ahorro - ${goal.name}`)
+      .order('date', { ascending: false })
+      .limit(5);
+    
+    setContributionHistory(data || []);
+    setLoadingHistory(false);
+  };
+
   const resetGoalForm = () => {
     setName('');
     setTargetAmount(0);
@@ -134,6 +162,15 @@ export const Savings = () => {
     setColor(goal.color || '#7C3AED');
     setIcon(goal.icon || 'Target');
     setIsGoalModalOpen(true);
+  };
+
+  const openContributionModal = (goal: SavingsGoal) => {
+    setSelectedGoal(goal);
+    setContribution(0);
+    setContributionDisplay('');
+    setContributionSource('balance');
+    setIsContributionModalOpen(true);
+    fetchContributionHistory(goal);
   };
 
   const handleSaveGoal = async (e: React.FormEvent) => {
@@ -209,25 +246,68 @@ export const Savings = () => {
 
   const handleContribute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedGoal || !contribution) return;
+    if (!selectedGoal || !contribution || !user) return;
 
     setIsSubmitting(true);
     const newAmount = Number(selectedGoal.current_amount) + contribution;
-    
-    const { error } = await supabase
-      .from('savings_goals')
-      .update({ current_amount: newAmount })
-      .eq('id', selectedGoal.id);
 
-    setIsSubmitting(false);
-    if (!error) {
-      setIsContributionModalOpen(false);
-      setContribution(0);
-      setContributionDisplay('');
-      fetchGoals();
-      addToast('Aporte guardado', 'success');
-    } else {
-      addToast('Error agregando aporte', 'error');
+    try {
+      if (contributionSource === 'balance') {
+        // PASO 1: Registrar transacción de gasto
+        const { error: txError } = await supabase.from('transactions').insert({
+          user_id: user.id,
+          type: 'expense',
+          amount: contribution,
+          category: `Ahorro - ${selectedGoal.name}`,
+          description: `Aporte a meta: ${selectedGoal.name}`,
+          date: getTodayColombia(),
+        });
+
+        if (txError) {
+          setIsSubmitting(false);
+          addToast('Error registrando la transacción', 'error');
+          return;
+        }
+
+        // PASO 2: Sumar al progreso de la meta
+        const { error: goalError } = await supabase
+          .from('savings_goals')
+          .update({ current_amount: newAmount })
+          .eq('id', selectedGoal.id);
+
+        setIsSubmitting(false);
+        if (!goalError) {
+          setIsContributionModalOpen(false);
+          setContribution(0);
+          setContributionDisplay('');
+          setSelectedGoal(null);
+          fetchGoals();
+          addToast('✓ Aporte registrado y descontado de tu balance', 'success');
+        } else {
+          addToast('Error actualizando la meta', 'error');
+        }
+      } else {
+        // Solo sumar al progreso de la meta
+        const { error } = await supabase
+          .from('savings_goals')
+          .update({ current_amount: newAmount })
+          .eq('id', selectedGoal.id);
+
+        setIsSubmitting(false);
+        if (!error) {
+          setIsContributionModalOpen(false);
+          setContribution(0);
+          setContributionDisplay('');
+          setSelectedGoal(null);
+          fetchGoals();
+          addToast('✓ Aporte registrado en tu meta', 'success');
+        } else {
+          addToast('Error agregando aporte', 'error');
+        }
+      }
+    } catch {
+      setIsSubmitting(false);
+      addToast('Error inesperado', 'error');
     }
   };
 
@@ -274,7 +354,7 @@ export const Savings = () => {
             return (
               <button
                 key={goal.id}
-                onClick={() => { setSelectedGoal(goal); setIsContributionModalOpen(true); }}
+                onClick={() => openContributionModal(goal)}
                 className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col items-center justify-between transition-transform hover:scale-[1.02] active:scale-[0.98] outline-none relative overflow-hidden w-full h-auto"
               >
                 {/* Edit Button — top right */}
@@ -362,12 +442,14 @@ export const Savings = () => {
       />
 
       {/* Contribute Modal */}
-      <Modal isOpen={isContributionModalOpen} onClose={() => {setIsContributionModalOpen(false); setSelectedGoal(null)}} title="Agregar Aporte">
+      <Modal isOpen={isContributionModalOpen} onClose={() => {setIsContributionModalOpen(false); setSelectedGoal(null); setContributionHistory([]);}} title={selectedGoal ? `Agregar aporte a ${selectedGoal.name}` : 'Agregar Aporte'}>
         {selectedGoal && (
           <form onSubmit={handleContribute} className="space-y-5 pb-4">
-            <div className="text-center mb-6">
-              <p className="text-slate-500 text-sm">Aportar a</p>
-              <h3 className="text-xl font-bold text-slate-800">{selectedGoal.name}</h3>
+            <div className="text-center mb-2">
+              <CircularProgress 
+                percentage={Math.min((selectedGoal.current_amount / selectedGoal.target_amount) * 100, 100)} 
+                color={selectedGoal.color || '#7C3AED'} 
+              />
               <p className="text-xs text-slate-400 mt-1">Faltan {formatCurrency(selectedGoal.target_amount - selectedGoal.current_amount)}</p>
             </div>
             
@@ -380,7 +462,113 @@ export const Savings = () => {
                 placeholder="0"
               />
             </div>
+
+            {/* Source Selection */}
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-3">¿De dónde sale este dinero?</label>
+              <div className="grid grid-cols-1 gap-3">
+                {/* Option A: From Balance */}
+                <button
+                  type="button"
+                  onClick={() => setContributionSource('balance')}
+                  className="flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all duration-200 text-left"
+                  style={{
+                    borderColor: contributionSource === 'balance' ? '#7C3AED' : '#e2e8f0',
+                    backgroundColor: contributionSource === 'balance' ? 'rgba(124, 58, 237, 0.06)' : 'transparent',
+                  }}
+                >
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors duration-200"
+                    style={{ 
+                      backgroundColor: contributionSource === 'balance' ? 'rgba(124, 58, 237, 0.15)' : '#f1f5f9',
+                      color: contributionSource === 'balance' ? '#7C3AED' : '#94a3b8',
+                    }}
+                  >
+                    <Wallet size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-800">De mi saldo actual</p>
+                    <p className="text-xs text-slate-400">Se descontará de tu balance</p>
+                  </div>
+                  {/* Radio indicator */}
+                  <div className="ml-auto shrink-0">
+                    <div 
+                      className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors duration-200"
+                      style={{ 
+                        borderColor: contributionSource === 'balance' ? '#7C3AED' : '#cbd5e1',
+                      }}
+                    >
+                      {contributionSource === 'balance' && (
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#7C3AED' }} />
+                      )}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Option B: Additional Money */}
+                <button
+                  type="button"
+                  onClick={() => setContributionSource('additional')}
+                  className="flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all duration-200 text-left"
+                  style={{
+                    borderColor: contributionSource === 'additional' ? '#10B981' : '#e2e8f0',
+                    backgroundColor: contributionSource === 'additional' ? 'rgba(16, 185, 129, 0.06)' : 'transparent',
+                  }}
+                >
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors duration-200"
+                    style={{ 
+                      backgroundColor: contributionSource === 'additional' ? 'rgba(16, 185, 129, 0.15)' : '#f1f5f9',
+                      color: contributionSource === 'additional' ? '#10B981' : '#94a3b8',
+                    }}
+                  >
+                    <PlusCircle size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-800">Es dinero adicional</p>
+                    <p className="text-xs text-slate-400">No afecta tu balance actual</p>
+                  </div>
+                  {/* Radio indicator */}
+                  <div className="ml-auto shrink-0">
+                    <div 
+                      className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors duration-200"
+                      style={{ 
+                        borderColor: contributionSource === 'additional' ? '#10B981' : '#cbd5e1',
+                      }}
+                    >
+                      {contributionSource === 'additional' && (
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                      )}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             <Button type="submit" fullWidth isLoading={isSubmitting}>Guardar Aporte</Button>
+
+            {/* Contribution History */}
+            {(contributionHistory.length > 0 || loadingHistory) && (
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wider">Aportes desde el saldo</p>
+                {loadingHistory ? (
+                  <div className="space-y-2">
+                    {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full rounded-xl" />)}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {contributionHistory.map((record, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-xl">
+                        <div>
+                          <p className="text-xs text-slate-500">{formatDateColombia(record.date)}</p>
+                        </div>
+                        <p className="text-sm font-bold text-slate-800">{formatCurrency(record.amount)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         )}
       </Modal>

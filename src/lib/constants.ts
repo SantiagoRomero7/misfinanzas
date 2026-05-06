@@ -1,4 +1,4 @@
-import { UtensilsCrossed, Car, Home, Heart, Tv, ShoppingBag, BookOpen, Zap, MoreHorizontal, Briefcase, Laptop, TrendingUp, Gift, Plus, Tag, LucideIcon } from 'lucide-react';
+import { UtensilsCrossed, Car, Home, Heart, Tv, ShoppingBag, BookOpen, Zap, MoreHorizontal, Briefcase, Laptop, TrendingUp, Gift, Plus, Tag, PiggyBank, LucideIcon } from 'lucide-react';
 
 export type CategoryDefinition = {
   name: string;
@@ -29,11 +29,13 @@ export const INCOME_CATEGORIES: CategoryDefinition[] = [
 export const ALL_CATEGORIES = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
 
 export const getCategoryIcon = (categoryName: string) => {
+  if (categoryName.startsWith('Ahorro -')) return PiggyBank;
   const category = ALL_CATEGORIES.find(c => c.name === categoryName);
   return category ? category.icon : Tag;
 };
 
 export const getCategoryColor = (categoryName: string) => {
+  if (categoryName.startsWith('Ahorro -')) return '#10B981';
   const category = ALL_CATEGORIES.find(c => c.name === categoryName);
   return category ? category.color : '#8B5CF6';
 };
