@@ -10,6 +10,7 @@ import { TrendingUp, TrendingDown, Wallet, Plus } from 'lucide-react';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { FinanceAssistantCard } from '@/components/ui/FinanceAssistantCard';
 
 export const Dashboard = () => {
   const { user } = useAuthStore();
@@ -172,6 +173,9 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Finance Assistant Card */}
+      <FinanceAssistantCard />
 
       <h3 className="font-bold text-slate-800 text-lg px-1">Progreso</h3>
       <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full">

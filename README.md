@@ -31,8 +31,10 @@
 - 🔢 **Formato Inteligente COP:** Separador manual de miles visual en tiempo real mientras typeas, para una agilidad inigualable.
 - 🍏 **Safe Areas para iOS:** Compatibilidad nativa sin que el notch o la *Home Bar* de tu teléfono interfieran con tu interface limpia.
 - 👤 **Bottom Navigation Inteligente:** Tabuladores ergonómicos (con nueva sección de **Perfil**) para cierres de sesión controlados. Modal inicial programada siempre en el switch `Ingreso` para mayor velocidad.
+- 🤖 **Asistente Financiero Inteligente (IA):** Chat interactivo y proactivo integrado en el Dashboard. Analiza tus transacciones, presupuestos y metas en tiempo real para ofrecerte consejos personalizados, alertas de sobregiro y motivación financiera mediante modelos Llama 3.1 de baja latencia.
 
 ---
+
 
 ## 🔐 Seguridad y Ciberseguridad
 
@@ -57,6 +59,8 @@ El núcleo tecnológico del sistema descansa en:
 - **Lucide React** entregando todas las iconografías dinámicas.
 - **date-fns** administrando cruces de zona horaria y cálculo temporal.
 - **vite-plugin-pwa** empaquetando la PWA y configurando su *Service Worker*.
+- **Supabase Edge Functions** para procesamiento de lógica de servidor segura y privada.
+- **Groq Cloud (LLaMA 3.1)** como motor de inteligencia artificial de alta velocidad y 0 costo.
 
 ---
 
@@ -161,6 +165,7 @@ Para instalar:
 |---------|---------|---------|
 | `VITE_SUPABASE_URL` | Tu URI individual del cluster Supabase. | ✅ Sí |
 | `VITE_SUPABASE_ANON_KEY`| Token JWT habilitador temporal. | ✅ Sí |
+| `GROQ_API_KEY` | Key de Groq (Configurar en Secrets de Supabase). | ✅ Sí |
 
 ---
 
@@ -193,6 +198,13 @@ Para instalar:
 - Editar y eliminar límites de presupuesto
 - Logo PWA generado (192x192, 512x512, 180x180)
 - README completo con documentación total
+
+### v1.4.0 - IA e Interactividad
+- **Asistente Financiero Inteligente:** Integración de Chat con IA (Llama 3.1) vía Groq.
+- **Contexto Financiero Real:** La IA tiene acceso a transacciones, presupuestos y metas.
+- **Edge Functions:** Implementación de lógica de servidor en Deno (Supabase Functions).
+- **Fallback Determinista:** Algoritmo de seguridad local por si la API de IA falla.
+- **UI de Chat Premium:** Interfaz con estados de carga, animaciones y scroll automático.
 
 ---
 
